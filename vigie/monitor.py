@@ -79,6 +79,16 @@ class Monitor:
     def _loop(self):
         pruned_day = None
         while not self._stop.is_set():
+            if not self.store.config.get("local_monitoring", True):
+                self.status = "Surveillance assurée par la machine virtuelle de la Freebox"
+                for fn in list(self.listeners):
+                    try:
+                        fn()
+                    except Exception:
+                        pass
+                self._wake.wait(30)
+                self._wake.clear()
+                continue
             try:
                 if not self.connected:
                     self.connect()

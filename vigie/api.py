@@ -82,6 +82,26 @@ class FreeboxAPI:
             raise FreeboxError(msg, code)
         return body.get("result")
 
+    def post_form(self, path: str, form: dict):
+        """POST encodé application/x-www-form-urlencoded (exigé par /downloads/add)."""
+        headers = {"X-Fbx-App-Auth": self.session_token} if self.session_token else {}
+        for attempt in (1, 2):
+            try:
+                r = self.http.post(self._url(path), data=form, headers=headers, timeout=self.timeout)
+                body = r.json()
+            except (requests.RequestException, ValueError) as e:
+                raise FreeboxError(f"Freebox injoignable ({e})", "unreachable") from e
+            if body.get("success"):
+                return body.get("result")
+            code = body.get("error_code")
+            if code in ("auth_required", "invalid_session") and attempt == 1:
+                self.login()
+                headers = {"X-Fbx-App-Auth": self.session_token}
+                continue
+            if code == "insufficient_rights":
+                raise PermissionMissing(body.get("msg") or code, code)
+            raise FreeboxError(body.get("msg") or code or "erreur inconnue", code)
+
     def call(self, method: str, path: str, payload=None):
         """Appel authentifié ; rouvre la session une fois si elle a expiré."""
         try:

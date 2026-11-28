@@ -1,0 +1,15 @@
+[Unit]
+Description=Vigie Freebox (surveillance Wi-Fi et TV de la Freebox)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=vigie
+Environment=VIGIE_DATA=/var/lib/vigie-freebox
+WorkingDirectory=/opt/vigie-freebox
+ExecStart=/opt/vigie-freebox/venv/bin/python -m vigie.server --port 8099
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

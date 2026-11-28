@@ -50,6 +50,10 @@ DEFAULT_CONFIG = {
 
 
 def data_dir() -> Path:
+    if os.environ.get("VIGIE_DATA"):          # version serveur (VM, Raspberry Pi…)
+        d = Path(os.environ["VIGIE_DATA"])
+        d.mkdir(parents=True, exist_ok=True)
+        return d
     if sys.platform.startswith("win"):
         base = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
     elif sys.platform == "darwin":
@@ -62,6 +66,10 @@ def data_dir() -> Path:
 
 
 def reports_dir() -> Path:
+    if os.environ.get("VIGIE_DATA"):
+        d = Path(os.environ["VIGIE_DATA"]) / "rapports"
+        d.mkdir(parents=True, exist_ok=True)
+        return d
     docs = Path.home() / "Documents"
     d = (docs if docs.exists() else Path.home()) / "Vigie Freebox"
     d.mkdir(parents=True, exist_ok=True)

@@ -290,6 +290,16 @@ def _bars(items: list, label) -> str:
                    for k, v in items)
 
 
+def _logo_html() -> str:
+    import base64
+    import sys
+    f = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent)) / "assets" / "logo_110.png"
+    if not f.is_file():
+        return ""
+    b = base64.b64encode(f.read_bytes()).decode()
+    return f"<img src='data:image/png;base64,{b}' alt='{APP_NAME}' style='height:60px;display:block;margin-bottom:8px'>"
+
+
 def render_html(a: dict, box: dict) -> str:
     e = html.escape
     c = a["counts"]
@@ -305,6 +315,7 @@ def render_html(a: dict, box: dict) -> str:
     ]
     H = [f"<!doctype html><html lang='fr'><head><meta charset='utf-8'><title>{e(a['title'])} — "
          f"{a['end']:%d/%m/%Y}</title><style>{CSS}</style></head><body>"]
+    H.append(_logo_html())
     H.append(f"<h1>{e(a['title'])}</h1>")
     H.append(f"<div class='intro'>{e(a['intro'])}</div>")
     meta = f"Du {a['start']:%d/%m/%Y %H:%M} au {a['end']:%d/%m/%Y %H:%M} ({a['period']})"

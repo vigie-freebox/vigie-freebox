@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/logo.png" alt="Vigie Freebox" width="360"></p>
+
 # Vigie Freebox
 
 **Application gratuite pour Windows et Mac qui enregistre les décrochages Wi-Fi et les coupures du lien TV de votre Freebox, et produit chaque semaine un rapport factuel à transmettre au support Free.**
@@ -104,6 +106,30 @@ Les étapes de réclamation :
    - ouvrez Freebox OS (http://mafreebox.freebox.fr) › *Paramètres de la Freebox* › *Gestion des accès* › onglet *Applications* › **Vigie Freebox** ;
    - cochez **Modification des réglages de la Freebox** : la Freebox exige ce droit pour *lire* l'état du Wi-Fi et des ports ; l'application ne modifie aucun réglage ;
    - cochez aussi l'accès à **l'explorateur réseau**.
+
+## Surveillance permanente dans la Freebox (machine virtuelle)
+
+Sur les Freebox qui proposent des machines virtuelles (Delta, premières Ultra), Vigie peut tourner **dans la Freebox elle-même**, 24 h/24, sans ordinateur allumé.
+
+Dans l'application : *Paramètres › Installer la surveillance dans la Freebox…*. L'assistant :
+1. vérifie que la box accepte les machines virtuelles et qu'il reste de la mémoire et un processeur libres ;
+2. fait télécharger par la Freebox l'image Debian qu'elle propose ;
+3. crée la machine virtuelle `vigie-freebox` (512 Mo, 1 processeur) ;
+4. y installe Vigie avec les réglages de l'application : sentinelles, rapports, coordonnées et autorisation Freebox.
+
+L'interface s'ouvre ensuite dans le navigateur, à l'adresse `http://<adresse-de-la-VM>:8099/`. Elle reprend les mêmes onglets : accueil, appareils, journal, rapports PDF, e-mail, réclamation Free et réglages. On peut alors cocher *Ne plus surveiller depuis cet ordinateur*.
+
+Pour cet assistant, la Freebox doit accorder trois droits supplémentaires à l'application. Dans Freebox OS › *Gestion des accès* › *Applications* › Vigie Freebox, cochez :
+- *Gestion des machines virtuelles* ;
+- *Accès au gestionnaire de téléchargements* ;
+- *Accès aux fichiers de la Freebox*.
+
+La version serveur s'installe aussi à la main sur un Raspberry Pi, un NAS ou tout Debian/Ubuntu :
+
+```bash
+git clone https://github.com/vigie-freebox/vigie-freebox /opt/vigie-freebox
+sudo bash /opt/vigie-freebox/serveur/install.sh
+```
 
 ## À savoir
 

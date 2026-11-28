@@ -3,6 +3,6 @@
 Application communautaire, non officielle, sans lien avec Free / Iliad.
 """
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 APP_ID = "fr.vigie.freebox"
 APP_NAME = "Vigie Freebox"

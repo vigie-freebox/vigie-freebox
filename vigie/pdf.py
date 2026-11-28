@@ -14,7 +14,7 @@ from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import (KeepTogether, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table,
+from reportlab.platypus import (Image, KeepTogether, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table,
                                 TableStyle)
 
 from . import APP_NAME, __version__
@@ -115,11 +115,22 @@ def _bars(items, label, st):
     return t
 
 
+def _logo():
+    """Logo Vigie Freebox en tête de rapport (rien si le fichier est absent)."""
+    f = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent)) / "assets" / "logo_110.png"
+    if not f.is_file():
+        return Spacer(1, 0)
+    h = 16 * mm
+    img = Image(str(f), width=h * 611 / 404, height=h)
+    img.hAlign = "LEFT"
+    return KeepTogether([img, Spacer(1, 4)])
+
+
 def report_flowables(a: dict, box: dict, st=None) -> list:
     st = st or _styles()
     _, fb = _fonts()
     c = a["counts"]
-    F = [Paragraph(_esc(a["title"]), st["title"]), Spacer(1, 3), _intro_box(a["intro"], st), Spacer(1, 6)]
+    F = [_logo(), Paragraph(_esc(a["title"]), st["title"]), Spacer(1, 3), _intro_box(a["intro"], st), Spacer(1, 6)]
     meta = f"Période : du {a['start']:%d/%m/%Y %H:%M} au {a['end']:%d/%m/%Y %H:%M} ({a['period']})"
     if box.get("model"):
         meta += f" · {box['model']}" + (f" (micrologiciel {box['firmware']})" if box.get("firmware") else "")

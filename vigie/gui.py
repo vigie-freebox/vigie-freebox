@@ -18,10 +18,13 @@ from .monitor import Monitor
 from .report import JOURS, LABELS, analyse, fmt_duration, generate
 from .schedule import FREQUENCES, last_occurrence, next_occurrence
 from .store import DEFAULT_INTRO, Store, reports_dir
+from .table import FilterTable
+from . import mailconf
 
 BLEU = "#1f4fbf"
 ROUGE = "#c0392b"
 VERT = "#1e8449"
+MARINE = "#09203f"
 GRIS = "#5a6478"
 FILTRES = {"Tous": None, "Wi-Fi": ("WIFI_",), "Répéteur": ("REPETEUR_",), "TV / Player": ("TV_",),
            "Box / Internet": ("BOX_", "INTERNET_", "FIBRE")}
@@ -102,11 +105,18 @@ class App(tk.Tk):
         s.configure("Treeview", rowheight=24)
 
     def _build(self):
-        top = ttk.Frame(self, padding=(14, 10))
+        top = tk.Frame(self, bg=MARINE)
         top.pack(fill="x")
-        ttk.Label(top, text=APP_NAME, style="Title.TLabel").pack(side="left")
-        self.lbl_status = ttk.Label(top, text="Démarrage…", style="Muted.TLabel")
-        self.lbl_status.pack(side="right")
+        from pathlib import Path
+        base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
+        try:
+            self._logo = tk.PhotoImage(file=str(base / "assets" / "logo_56.png"))
+            tk.Label(top, image=self._logo, bg=MARINE, bd=0).pack(side="left", padx=(12, 8), pady=6)
+        except tk.TclError:
+            tk.Label(top, text=APP_NAME, bg=MARINE, fg="white",
+                     font=("TkDefaultFont", 16, "bold")).pack(side="left", padx=14, pady=10)
+        self.lbl_status = tk.Label(top, text="Démarrage…", bg=MARINE, fg="#c9d4ea")
+        self.lbl_status.pack(side="right", padx=14)
 
         self.banner = tk.Frame(self, bg="#fff4d6")
         self.banner_lbl = tk.Label(self.banner, bg="#fff4d6", anchor="w", justify="left", wraplength=760)
@@ -177,8 +187,8 @@ class App(tk.Tk):
             d.pack(anchor="w")
             self.cards[key] = (v, d)
         ttk.Label(self.dash, text="Derniers événements", font=("TkDefaultFont", 12, "bold")).pack(anchor="w", pady=(16, 4))
-        self.tv_last = self._tree(self.dash, [("ts", "Date et heure", 150), ("type", "Événement", 200),
-                                              ("detail", "Détail", 520)], height=12)
+        self.t_last = FilterTable(self.dash, [("ts", "Date et heure", 150, "jour"), ("type", "Événement", 200, "liste"), ("detail", "Détail", 520, "texte")], height=10, default_sort=0)
+        self.tv_last = self.t_last.tree
 
     # ------------------------------------------------------------------ Appareils
     def _tab_devices(self):
@@ -188,9 +198,11 @@ class App(tk.Tk):
             "Cochez comme « sentinelles » les appareils qui ne se mettent jamais en veille (caméras, prises, "
             "imprimantes, box TV…) : leurs déconnexions sont la preuve la plus solide d'un problème Wi-Fi. "
             "Les téléphones et ordinateurs se déconnectent normalement quand ils dorment.")).pack(anchor="w")
-        self.tv_dev = self._tree(f, [("sent", "Sentinelle", 80), ("name", "Appareil", 220), ("borne", "Borne", 150),
-                                     ("band", "Bande", 80), ("signal", "Signal", 80), ("mac", "Adresse MAC", 150),
-                                     ("decos", "Déco. 7 j", 80)], height=16)
+        self.t_dev = FilterTable(f, [("sent", "Sentinelle", 100, "liste"), ("name", "Appareil", 210, "texte"),
+                                     ("borne", "Borne", 150, "liste"), ("band", "Bande", 80, "liste"),
+                                     ("signal", "Signal", 80, None), ("mac", "Adresse MAC", 150, None),
+                                     ("decos", "Déco. 7 j", 80, "nombre")], height=14, default_sort=0)
+        self.tv_dev = self.t_dev.tree
         self.tv_dev.bind("<Double-1>", lambda e: self._toggle_sentinel())
         b = ttk.Frame(f)
         b.pack(anchor="w", pady=6)
@@ -203,18 +215,15 @@ class App(tk.Tk):
         self.nb.add(f, text="Journal")
         bar = ttk.Frame(f)
         bar.pack(fill="x")
-        ttk.Label(bar, text="Afficher :").pack(side="left")
+        ttk.Label(bar, text="Période :").pack(side="left")
         self.filter = tk.StringVar(value="Tous")
-        cb = ttk.Combobox(bar, textvariable=self.filter, values=list(FILTRES), state="readonly", width=16)
-        cb.pack(side="left", padx=6)
-        cb.bind("<<ComboboxSelected>>", lambda e: self._refresh_journal())
         self.days = tk.StringVar(value="7 jours")
         cb2 = ttk.Combobox(bar, textvariable=self.days, values=["24 heures", "7 jours", "30 jours"], state="readonly", width=10)
-        cb2.pack(side="left")
+        cb2.pack(side="left", padx=6)
         cb2.bind("<<ComboboxSelected>>", lambda e: self._refresh_journal())
         ttk.Button(bar, text="Actualiser", command=self._refresh_journal).pack(side="left", padx=6)
-        self.tv_journal = self._tree(f, [("ts", "Date et heure", 150), ("type", "Événement", 200),
-                                         ("detail", "Détail", 560)], height=20)
+        self.t_journal = FilterTable(f, [("ts", "Date et heure", 150, "jour"), ("type", "Événement", 200, "liste"), ("detail", "Détail", 560, "texte")], height=18, default_sort=0)
+        self.tv_journal = self.t_journal.tree
 
     # ------------------------------------------------------------------ Rapports
     def _tab_reports(self):
@@ -298,48 +307,167 @@ class App(tk.Tk):
 
     # ------------------------------------------------------------------ E-mail
     def _tab_email(self):
-        f = ttk.Frame(self.nb, padding=14)
+        f = ttk.Frame(self.nb, padding=(14, 8))
         self.nb.add(f, text="E-mail")
         cfg = self.store.config
-        ttk.Label(f, wraplength=880, justify="left", text=(
-            "Recevez chaque rapport en pièce jointe (PDF). L'envoi passe par votre propre messagerie : "
-            "indiquez son serveur d'envoi (SMTP). Pour Gmail, Yahoo ou iCloud, créez un « mot de passe "
-            "d'application » dans les réglages de sécurité de votre compte.")).pack(anchor="w")
-        g = ttk.Frame(f)
-        g.pack(anchor="w", pady=10)
+        ttk.Label(f, wraplength=920, justify="left", text=(
+            "Recevez chaque rapport en pièce jointe (PDF). L'envoi se fait depuis VOTRE adresse e-mail, comme si "
+            "vous l'envoyiez vous-même. En général, il suffit de saisir votre adresse et votre mot de passe : "
+            "les réglages techniques sont trouvés automatiquement.")).pack(anchor="w")
         self.mail_vars = {}
+        HELP = 470
 
-        def field(r, label, key, width=40, show=None, value=None):
-            ttk.Label(g, text=label).grid(row=r, column=0, sticky="w", pady=3)
+        def section(title):
+            lf = ttk.LabelFrame(f, text=title, padding=(10, 4))
+            lf.pack(fill="x", pady=(8, 0))
+            lf.columnconfigure(2, weight=1)
+            return lf
+
+        def field(g, r, label, key, help_text="", width=36, show=None, value=None):
+            ttk.Label(g, text=label).grid(row=r, column=0, sticky="w", pady=2)
             v = tk.StringVar(value=str(cfg.get(key, "") if value is None else value))
-            ttk.Entry(g, textvariable=v, width=width, show=show).grid(row=r, column=1, sticky="w", padx=8)
+            e = ttk.Entry(g, textvariable=v, width=width, show=show)
+            e.grid(row=r, column=1, sticky="w", padx=8)
+            if help_text:
+                ttk.Label(g, text=help_text, style="Muted.TLabel", wraplength=HELP,
+                          justify="left").grid(row=r, column=2, sticky="w")
             self.mail_vars[key] = v
+            return e
 
-        field(0, "Envoyer les rapports à", "email_to", 44)
-        ttk.Label(g, text="(séparer par des virgules)", style="Muted.TLabel").grid(row=0, column=2, sticky="w")
-        ttk.Label(g, text="Ma messagerie").grid(row=1, column=0, sticky="w", pady=3)
+        g1 = section("① Votre adresse e-mail (l'expéditeur)")
+        e_from = field(g1, 0, "Adresse e-mail", "smtp_from",
+                       "L'adresse avec laquelle vous envoyez vos e-mails (ex. : jean.dupont@free.fr).")
+        e_from.bind("<FocusOut>", lambda e: self._autodetect(quiet=True))
+        e_from.bind("<Return>", lambda e: self._autodetect())
+        field(g1, 1, "Mot de passe", "_password",
+              "Le mot de passe de cette boîte e-mail. Gmail, Yahoo, iCloud et Outlook exigent un « mot de passe "
+              "d'application » (voir le lien ci-dessous). Il est rangé dans le trousseau sécurisé de l'ordinateur.",
+              show="•", value=mailer.get_password(self.store))
+        bar = ttk.Frame(g1)
+        bar.grid(row=2, column=0, columnspan=3, sticky="w", pady=(4, 2))
+        ttk.Button(bar, text="Trouver les réglages automatiquement", command=self._autodetect).pack(side="left")
+        ttk.Button(bar, text="Importer depuis Thunderbird…", command=self._import_thunderbird).pack(side="left", padx=8)
+        self.btn_apppw = ttk.Button(bar, text="Créer un mot de passe d'application ↗", command=self._open_apppw)
+        self._apppw_url = None
+        self.lbl_detect = ttk.Label(g1, text="", wraplength=900, justify="left")
+        self.lbl_detect.grid(row=3, column=0, columnspan=3, sticky="w")
+
+        g2 = section("② À qui envoyer les rapports")
+        field(g2, 0, "Destinataire(s)", "email_to",
+              "Votre propre adresse le plus souvent. Plusieurs adresses possibles, séparées par des virgules.", 44)
+
+        g3 = section("③ Réglages techniques (remplis automatiquement — à ne modifier qu'en cas de besoin)")
+        ttk.Label(g3, text="Messagerie").grid(row=0, column=0, sticky="w", pady=2)
         self.var_preset = tk.StringVar(value="Autre")
-        cb = ttk.Combobox(g, textvariable=self.var_preset, values=list(mailer.PRESETS), state="readonly", width=36)
-        cb.grid(row=1, column=1, sticky="w", padx=8)
+        cb = ttk.Combobox(g3, textvariable=self.var_preset, values=list(mailer.PRESETS), state="readonly", width=34)
+        cb.grid(row=0, column=1, sticky="w", padx=8)
         cb.bind("<<ComboboxSelected>>", lambda e: self._apply_preset())
-        field(2, "Adresse d'envoi (expéditeur)", "smtp_from")
-        field(3, "Identifiant de connexion", "smtp_user")
-        field(4, "Mot de passe", "_password", show="•", value=mailer.get_password(self.store))
-        field(5, "Serveur SMTP", "smtp_host")
-        field(6, "Port", "smtp_port", 8)
-        ttk.Label(g, text="Sécurité").grid(row=7, column=0, sticky="w", pady=3)
+        ttk.Label(g3, text="Choisir ici remplit le serveur, le port et la sécurité.", style="Muted.TLabel",
+                  wraplength=HELP).grid(row=0, column=2, sticky="w")
+        field(g3, 1, "Identifiant de connexion", "smtp_user",
+              "Presque toujours votre adresse e-mail complète.")
+        field(g3, 2, "Serveur d'envoi (SMTP)", "smtp_host", "Ex. : smtp.free.fr, smtp.gmail.com, smtp.orange.fr.")
+        field(g3, 3, "Port", "smtp_port", "465 avec la sécurité « ssl », 587 avec « starttls ».", 8)
+        ttk.Label(g3, text="Sécurité").grid(row=4, column=0, sticky="w", pady=2)
         self.var_sec = tk.StringVar(value=cfg.get("smtp_security", "ssl"))
-        ttk.Combobox(g, textvariable=self.var_sec, values=["ssl", "starttls", "aucune"], state="readonly",
-                     width=10).grid(row=7, column=1, sticky="w", padx=8)
+        ttk.Combobox(g3, textvariable=self.var_sec, values=["ssl", "starttls", "aucune"], state="readonly",
+                     width=10).grid(row=4, column=1, sticky="w", padx=8)
+        ttk.Label(g3, text="Chiffrement de la connexion : « ssl » ou « starttls », jamais « aucune » sauf cas "
+                           "particulier.", style="Muted.TLabel", wraplength=HELP).grid(row=4, column=2, sticky="w")
+
         self.var_email_auto = tk.BooleanVar(value=cfg.get("email_auto", False))
         ttk.Checkbutton(f, text="Envoyer automatiquement chaque rapport programmé par e-mail (PDF en pièce jointe)",
-                        variable=self.var_email_auto).pack(anchor="w")
+                        variable=self.var_email_auto).pack(anchor="w", pady=(8, 0))
         row = ttk.Frame(f)
-        row.pack(anchor="w", pady=10)
+        row.pack(anchor="w", pady=6)
         ttk.Button(row, text="Enregistrer", command=self._save_email).pack(side="left")
         ttk.Button(row, text="Envoyer un e-mail de test", command=self._test_email).pack(side="left", padx=8)
-        self.lbl_mail = ttk.Label(f, text="", wraplength=880, justify="left")
+        self.lbl_mail = ttk.Label(f, text="", wraplength=900, justify="left")
         self.lbl_mail.pack(anchor="w")
+
+    def _show_detect(self, res, origin=""):
+        v = self.mail_vars
+        v["smtp_host"].set(res["smtp_host"])
+        v["smtp_port"].set(str(res["smtp_port"]))
+        v["smtp_user"].set(res["smtp_user"])
+        self.var_sec.set(res["smtp_security"])
+        self.var_preset.set(next((k for k, p in mailer.PRESETS.items() if p[0] == res["smtp_host"]), "Autre"))
+        if not v["email_to"].get().strip() and v["smtp_from"].get().strip():
+            v["email_to"].set(v["smtp_from"].get().strip())
+        self.lbl_detect.configure(foreground=VERT, text=(
+            f"✔ {origin or res['provider']} : {res['smtp_host']}, port {res['smtp_port']} ({res['smtp_security']}). "
+            + (res.get("note") or "")))
+        self._apppw_url = res.get("app_password_url")
+        if self._apppw_url:
+            self.btn_apppw.pack(side="left")
+        else:
+            self.btn_apppw.pack_forget()
+
+    def _autodetect(self, quiet=False):
+        addr = self.mail_vars["smtp_from"].get().strip()
+        if not addr:
+            if not quiet:
+                self.lbl_detect.configure(foreground=ROUGE, text="Saisissez d'abord votre adresse e-mail.")
+            return
+        if quiet and self.mail_vars["smtp_host"].get().strip() and getattr(self, "_detected_for", None) in (None, addr):
+            return   # réglages déjà présents : ne rien écraser en quittant le champ
+        self._detected_for = addr
+        res = mailconf.from_table(addr)
+        if res:
+            return self._show_detect(res)
+        if mailconf._domain(addr) is None:
+            self.lbl_detect.configure(foreground=ROUGE, text="Cette adresse e-mail ne semble pas valide.")
+            return
+        self.lbl_detect.configure(foreground=GRIS, text="Recherche des réglages sur Internet…")
+
+        def work():
+            r = mailconf.from_internet(addr)
+            self.after(0, lambda: self._show_detect(r) if r else self.lbl_detect.configure(
+                foreground=ROUGE, text="Réglages introuvables automatiquement pour ce domaine : choisissez votre "
+                                       "messagerie dans la liste ③ ou demandez le « serveur SMTP » à votre "
+                                       "fournisseur d'e-mail."))
+        threading.Thread(target=work, daemon=True).start()
+
+    def _import_thunderbird(self):
+        accs = mailconf.thunderbird_accounts()
+        if not accs:
+            messagebox.showinfo(APP_NAME, "Aucun compte Thunderbird trouvé sur cet ordinateur.\n\n"
+                                          "Les réglages d'Outlook, de Mail (Mac) ou du navigateur ne sont pas "
+                                          "lisibles par l'application : utilisez « Trouver les réglages "
+                                          "automatiquement ».")
+            return
+        acc = accs[0]
+        if len(accs) > 1:
+            win = tk.Toplevel(self)
+            win.title("Comptes Thunderbird")
+            win.transient(self)
+            ttk.Label(win, text="Quel compte utiliser pour envoyer les rapports ?", padding=10).pack(anchor="w")
+            lb = tk.Listbox(win, width=60, height=min(8, len(accs)))
+            for a in accs:
+                lb.insert("end", f"{a['address']}  —  {a['smtp_host']}")
+            lb.selection_set(0)
+            lb.pack(padx=10)
+            choice = {}
+            ttk.Button(win, text="Utiliser ce compte",
+                       command=lambda: (choice.update(i=lb.curselection()[0] if lb.curselection() else 0),
+                                        win.destroy())).pack(pady=10)
+            win.grab_set()
+            self.wait_window(win)
+            if "i" not in choice:
+                return
+            acc = accs[choice["i"]]
+        self.mail_vars["smtp_from"].set(acc["address"])
+        self._detected_for = acc["address"]
+        self._show_detect(acc, "Repris de Thunderbird")
+        table = mailconf.from_table(acc["address"])
+        if table and table.get("app_password_url"):
+            self._apppw_url = table["app_password_url"]
+            self.btn_apppw.pack(side="left")
+
+    def _open_apppw(self):
+        if self._apppw_url:
+            import webbrowser
+            webbrowser.open(self._apppw_url)
 
     # ------------------------------------------------------------------ Réclamation Free
     def _tab_free(self):
@@ -424,6 +552,24 @@ class App(tk.Tk):
             cb.state(["disabled"])
         ttk.Button(g, text="Enregistrer", command=self._save_settings).grid(row=4, column=0, sticky="w", pady=6)
 
+        vmbox = ttk.LabelFrame(f, text="Surveillance permanente (sans laisser l'ordinateur allumé)", padding=10)
+        vmbox.pack(fill="x", pady=(14, 0))
+        ttk.Label(vmbox, wraplength=860, justify="left", text=(
+            "Sur les Freebox qui proposent des machines virtuelles (Delta, premières Ultra), Vigie peut s'installer "
+            "dans la Freebox elle-même et surveiller 24 h/24. L'assistant vérifie votre box puis fait tout "
+            "automatiquement.")).pack(anchor="w")
+        rowvm = ttk.Frame(vmbox)
+        rowvm.pack(anchor="w", pady=(6, 0))
+        ttk.Button(rowvm, text="Installer la surveillance dans la Freebox…", style="Accent.TButton",
+                   command=self._vm_wizard).pack(side="left")
+        self.btn_vm_open = ttk.Button(rowvm, text="Ouvrir la surveillance de la Freebox",
+                                      command=lambda: webbrowser.open(self.store.config.get("vm_url") or ""))
+        if self.store.config.get("vm_url"):
+            self.btn_vm_open.pack(side="left", padx=8)
+        self.var_local = tk.BooleanVar(value=not self.store.config.get("local_monitoring", True))
+        ttk.Checkbutton(vmbox, text="Ne plus surveiller depuis cet ordinateur (la Freebox s'en charge)",
+                        variable=self.var_local, command=self._toggle_local).pack(anchor="w", pady=(6, 0))
+
         ttk.Separator(f).pack(fill="x", pady=14)
         row = ttk.Frame(f)
         row.pack(anchor="w")
@@ -451,6 +597,10 @@ class App(tk.Tk):
         tv.tag_configure("alert", foreground=ROUGE)
         tv.tag_configure("ok", foreground=VERT)
         return tv
+
+    def _ev_dict(self, e):
+        vals, tag = self._ev_row(e)
+        return {"values": vals, "tag": tag, "sort": (e["ts"], vals[1].lower(), vals[2].lower())}
 
     @staticmethod
     def _ev_row(e):
@@ -484,6 +634,7 @@ class App(tk.Tk):
                 self._dirty.clear()
                 self._refresh_dashboard()
                 self._refresh_devices()
+                self._refresh_journal()
             if self._new_report:
                 paths, self._new_report = self._new_report, None
                 extra = f" — e-mail : {paths['mail']}" if paths.get("mail") else ""
@@ -497,7 +648,7 @@ class App(tk.Tk):
         m = self.monitor
         has_token = bool(self.store.config.get("app_token"))
         self.lbl_status.configure(text=m.status + (f" — {m.error}" if m.error and not m.connected else ""),
-                                  foreground=VERT if m.connected else (ROUGE if m.error else GRIS))
+                                  foreground="#7ee2a8" if m.connected else ("#ff9c94" if m.error else "#c9d4ea"))
         if m.connected or (has_token and self._track is None and m.status != "Autorisation nécessaire"):
             self.auth_box.pack_forget()
             if not self.dash.winfo_ismapped():
@@ -548,10 +699,7 @@ class App(tk.Tk):
         serious = [e for e in evs if e["type"] not in ("WIFI_RECONNEXION", "WIFI_CHANGEMENT_BORNE")
                    and not e["type"].endswith("RETABLI") and not e["type"].startswith("RAPPORT_")]
         self._card("week", str(len(serious)), "déconnexions, coupures et erreurs")
-        self.tv_last.delete(*self.tv_last.get_children())
-        for e in reversed(evs[-40:]):
-            vals, tag = self._ev_row(e)
-            self.tv_last.insert("", "end", values=vals, tags=(tag,))
+        self.t_last.set_rows([self._ev_dict(e) for e in evs[-200:]])
 
     def _card(self, key, value, detail, color=None):
         v, d = self.cards[key]
@@ -565,31 +713,25 @@ class App(tk.Tk):
         for e in self.store.events(datetime.now() - timedelta(days=7)):
             if e["type"] in ("WIFI_DECONNEXION", "WIFI_COUPURE_BREVE") and e.get("mac"):
                 decos[e["mac"]] = decos.get(e["mac"], 0) + 1
-        sel = self.tv_dev.selection()
-        self.tv_dev.delete(*self.tv_dev.get_children())
         rows = dict(s.get("stations", {}))
         for mac in sent:   # les sentinelles déconnectées restent visibles
             rows.setdefault(mac, {"name": self.store.config.get("aliases", {}).get(mac, mac),
                                   "borne": "DÉCONNECTÉ", "bande": "", "signal": None})
-        for mac, v in sorted(rows.items(), key=lambda kv: (kv[0] not in sent, str(kv[1]["name"]).lower())):
-            tag = "alert" if v["borne"] == "DÉCONNECTÉ" else ""
-            self.tv_dev.insert("", "end", iid=mac, tags=(tag,), values=(
-                "✔" if mac in sent else "", v["name"], v["borne"], v["bande"],
-                f"{v['signal']} dBm" if v.get("signal") is not None else "", mac, decos.get(mac, 0)))
-        keep = [i for i in sel if self.tv_dev.exists(i)]
-        if keep:
-            self.tv_dev.selection_set(keep)
+        out = []
+        for mac, v in rows.items():
+            sig = v.get("signal")
+            vals = ("✔" if mac in sent else "", v["name"], v["borne"], v["bande"],
+                    f"{sig} dBm" if sig is not None else "", mac, decos.get(mac, 0))
+            out.append({"values": vals, "iid": mac, "tag": "alert" if v["borne"] == "DÉCONNECTÉ" else "",
+                        "sort": (mac in sent, str(v["name"]).lower(), str(v["borne"]), str(v["bande"]),
+                                 sig if isinstance(sig, (int, float)) else -999, mac, decos.get(mac, 0))})
+        self.t_dev.set_rows(out)
 
     def _refresh_journal(self):
         days = {"24 heures": 1, "7 jours": 7, "30 jours": 30}[self.days.get()]
         pref = FILTRES[self.filter.get()]
         evs = self.store.events(datetime.now() - timedelta(days=days))
-        self.tv_journal.delete(*self.tv_journal.get_children())
-        for e in reversed(evs):
-            if pref and not e["type"].startswith(pref):
-                continue
-            vals, tag = self._ev_row(e)
-            self.tv_journal.insert("", "end", values=vals, tags=(tag,))
+        self.t_journal.set_rows([self._ev_dict(e) for e in evs if not (pref and not e["type"].startswith(pref))])
 
     def _refresh_reports(self):
         self.lst_reports.delete(0, "end")
@@ -940,6 +1082,90 @@ class App(tk.Tk):
             self.monitor.connected = False
         self.monitor.wake()
         messagebox.showinfo(APP_NAME, "Paramètres enregistrés.")
+
+    # ------------------------------------------------------------------ machine virtuelle
+    def _toggle_local(self):
+        off = bool(self.var_local.get())
+        if off and not self.store.config.get("vm_url"):
+            messagebox.showinfo(APP_NAME, "Installez d'abord la surveillance dans la Freebox.")
+            self.var_local.set(False)
+            return
+        self.store.set("local_monitoring", not off)
+        self.monitor.connected = False
+        self.monitor.wake()
+
+    def _vm_wizard(self):
+        from .vmsetup import VM_MEMORY, VMInstaller, VMSetupError
+        w = tk.Toplevel(self)
+        w.title("Surveillance permanente dans la Freebox")
+        w.geometry("720x520")
+        w.transient(self)
+        ttk.Label(w, wraplength=680, justify="left", padding=12, text=(
+            "L'assistant va :\n"
+            "  1. vérifier que votre Freebox accepte les machines virtuelles et qu'il reste de la place ;\n"
+            "  2. faire télécharger par la Freebox l'image Debian qu'elle propose pour ses machines virtuelles ;\n"
+            f"  3. créer une petite machine virtuelle « vigie-freebox » ({VM_MEMORY} Mo de mémoire, 1 processeur) ;\n"
+            "  4. y installer Vigie avec vos réglages actuels (sentinelles, rapports, coordonnées…).\n\n"
+            "Vos autres machines virtuelles éventuelles ne sont pas modifiées. Le mot de passe e-mail n'est pas "
+            "copié : vous le ressaisirez dans l'interface de la Freebox.")).pack(anchor="w")
+        log = tk.Text(w, height=12, wrap="word", font=("TkDefaultFont", 10))
+        log.pack(fill="both", expand=True, padx=12)
+        btns = ttk.Frame(w, padding=10)
+        btns.pack(fill="x")
+        b_check = ttk.Button(btns, text="1. Vérifier ma Freebox")
+        b_install = ttk.Button(btns, text="2. Installer", style="Accent.TButton", state="disabled")
+        b_open = ttk.Button(btns, text="Ouvrir la surveillance")
+        b_check.pack(side="left")
+        b_install.pack(side="left", padx=8)
+
+        def say(msg):
+            self.after(0, lambda: (log.insert("end", msg + "\n"), log.see("end")))
+
+        def check():
+            b_check.state(["disabled"])
+            say("Vérification…")
+
+            def work():
+                inst = VMInstaller(FreeboxAPI(self.store.config["freebox_url"], self.store.config.get("app_token")),
+                                   self.store, say)
+                r = inst.check()
+                say(("✔ " if r["ok"] else "✘ ") + r["message"])
+                self.after(0, lambda: (b_check.state(["!disabled"]),
+                                       b_install.state(["!disabled"] if r["ok"] else ["disabled"])))
+            threading.Thread(target=work, daemon=True).start()
+
+        def install():
+            if not messagebox.askyesno(APP_NAME, "Créer la machine virtuelle « vigie-freebox » sur votre Freebox ?",
+                                       parent=w):
+                return
+            b_install.state(["disabled"])
+            b_check.state(["disabled"])
+
+            def work():
+                inst = VMInstaller(FreeboxAPI(self.store.config["freebox_url"], self.store.config.get("app_token")),
+                                   self.store, say)
+                try:
+                    res = inst.install()
+                    say("✔ Terminé." if not res.get("pending") else
+                        "La VM tourne ; l'installation se termine encore (quelques minutes).")
+                    say(f"Adresse de la surveillance : {res['url']}")
+
+                    def done():
+                        b_open.configure(command=lambda: webbrowser.open(res["url"]))
+                        b_open.pack(side="left", padx=8)
+                        self.btn_vm_open.pack(side="left", padx=8)
+                        if messagebox.askyesno(APP_NAME, "La Freebox surveille maintenant en permanence.\n\n"
+                                                         "Arrêter la surveillance depuis cet ordinateur ?", parent=w):
+                            self.var_local.set(True)
+                            self._toggle_local()
+                    self.after(0, done)
+                except (VMSetupError, Exception) as e:
+                    say(f"✘ {e}")
+                    self.after(0, lambda: (b_check.state(["!disabled"]),))
+            threading.Thread(target=work, daemon=True).start()
+
+        b_check.configure(command=check)
+        b_install.configure(command=install)
 
     def _on_close(self):
         r = messagebox.askyesnocancel(
